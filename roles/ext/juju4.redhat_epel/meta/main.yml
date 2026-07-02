@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: redhat_epel
+  author: juju4
+  description: Simple Role to add EPEL repository on RedHat based systems
+  license: BSD
+  min_ansible_version: '1.9'
+  #
+  # Below are all platforms currently available. Just uncomment
+  # the ones that apply to your role. If you don't see your
+  # platform on this list, let us know and we'll get it added!
+  #
+  platforms:
+    - name: EL
+      versions:
+        - all
+  galaxy_tags:
+    - system
+dependencies: []
