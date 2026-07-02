@@ -1,0 +1,14 @@
+---
+
+- name: Verify
+  hosts: epel
+  tasks:
+    - name: Validate epel package is present
+      ansible.builtin.command: rpm -qi epel-release  # noqa command-instead-of-module
+      changed_when: false
+      failed_when: false
+      register: rpm
+    - name: Validate rpm
+      ansible.builtin.assert:
+        that: rpm.rc == 0
+      when: ansible_os_family == "RedHat"

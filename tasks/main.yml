@@ -1,0 +1,9 @@
+---
+
+- name: Include version-specific variables for RedHat
+  ansible.builtin.include_vars: "RedHat-{{ ansible_distribution_version.split('.')[0] }}.yml"
+  when: ansible_os_family == "RedHat"
+
+- name: Import redhat-epel
+  ansible.builtin.import_tasks: redhat-epel.yml
+  when: ansible_os_family == "RedHat"
