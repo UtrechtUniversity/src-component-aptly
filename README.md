@@ -1,39 +1,83 @@
-# Template repository for SURF ResearchCloud Components
+# Playbook aptly
 
-This repository provides you with the boilerplate needed to get started with Ansible-based components for SURF ResearchCloud. It contains:
+A Ansible playbook component for SURF ResearchCloud.
 
-* An example playbook file (`playbook.yml`)
-* An example dependency file (`requirements.yml`)
-* Directory structure for separating Ansible concerns:
-  * `vars` for declaring variables
-  * `roles` for roles you want to use that cannot be imported as a collection in the requirements file
-* `component_vars.yml` can be used to simulate variables defined in the ResearchCloud portal, in conjunction with [run_component.sh](#manually-running-the-component-on-a-container)
-* Test configuration in the `molecule` directory.
-  * A molecule configuration file (`.env.yml`)
-* GitHub Actions workflows (see [CI](#ci)).
+See https://github.com/UtrechtUniversity/researchcloud-items for UU's main repo of SRC components.
 
-## Manually running the component on a container
+## Summary
 
-You can use Docker or Podman to test your playbook on a container that mimics a ResearchCloud workspace!
+Installs [Aptly](https://www.aptly.info/), the "Swiss army knife for Debian repository management", and uses it to serve apt repositories on the workspace, as defined by the user.
 
-Test containers are available [here](https://github.com/UtrechtUniversity/SRC-test-workspace). The containers container a `run_component.sh` script that mock the process of deploying a component on ResearchCloud.
+## Requires
 
-Should you use Docker or Podman? In order to make it possible to use `sytemd` services on the container, we will start it using `/sbin/init`. This is easier to achieve using Podman, which uses a sane configuration for this by default. Using Docker, it may be necessary to add `--privileged` to your `docker run` command.
+* OS: Ubuntu `jammy` or higher.
+* OS: Debian `bookworm` or higher.
+* Component: `nginx` must be installed and running on the workspace when this component is executed.
 
-1. First determine which test image you want to use. Have a look at the options [here](https://github.com/UtrechtUniversity/SRC-test-workspace#src-test-workspace).
-1. In order to be able to pull the test image, login to the GitHub container registry:
-    * `podman login ghcr.io`
-    * Note: you will need to have a GitHub personal access token configured to login
-1. Start a test container with the image you have picked: `podman run -d --name src_component_test -v $(pwd):/etc/rsc/my_component ghcr.io/utrechtuniversity/src-test-workspace:ubuntu_jammy /sbin/init`
-    * `-d`: run in the background
-    * `--name src_component_test`: give your container a name
-    * `-v $(pwd):/etc/rsc/my_component`: make your component directory available on the container
-    * start with `/sbin/init` to allow testing of `systemd` services
-1. If your component expects variables to be defined in the ResearchCloud portal, mock these variables by defining them in the file `component_vars.yml`.
-1. Execute your component on the container using the provided `run_component` script:
-  * `podman exec src_component_test run_component.sh /etc/rsc/my_component/playbook.yml`
-1. Observe the output, make changes to your component, and run it again!
-  * Simply destroy and recreate your container as needed.
+## Description
+
+This component:
+
+1. installs Aptly.
+1. uses Aptly to create apt repositories, as defined by the user (see [Variables](#Variables)).
+1. uses Aptly to add packages to the created repositories, as defined by the user (see [Variables](#Variables)).
+1. uses `nginx` to serve the apt repositories from the workspace.
+  * repositories are served under the `/apt/` location (e.g. `https://<workspace_fqdn>/apt/dists/...`)
+
+To publish repositories, Aptly must have access to a valid GPG Keypair. This component:
+
+* uses a keypair provided by the user in the component parameters (see [Variables](#Variables)).
+* creates a new keypair when none is provided by the user.
+  * the new public key is served by `nginx` alongside the apt repositories (URL: `<workspace_fqdn>/apt/aptly_pubkey.asc`), so that it can easily be downloaded.
+
+To add packages to repositories, the component creates the script `/usr/local/bin/aptly_add_packages.sh`. The script is run once when this component is executed, but you can also use it at any later time to add more packages to the repositories defined by this component. See the [aptly_add role](../roles/aptly_add.md) for documentation.
+
+## Variables
+
+### Aptly repositories
+
+`aptly_repositories`: String of YAML dict objects (one on every newline) defining repositories to be created. Example:
+
+```yaml
+{name: jammy, distribution: jammy, label: test, state: present, components: [main, experimental], architectures: [amd64, arm64]}
+{name: focal, distribution: focal, label: test, state: present, components: [main, experimental], architectures: [amd64]}
+```
+
+This creates repositories for two distributions (`jammy` and `focal`), each with two 'components' (channels, in this case `main` and `experimental`). The `focal` repo will contain only `amd64` packages, while the `jammy` repo also supports `arm64`. The `name` and `label` attributes are descriptive. For more info, compare the [format of an apt repo](https://wiki.debian.org/DebianRepository/Format).
+
+### Aptly packages
+
+`aptly_packages`: String of YAML dict objects (one on every newline) defining directories from which predefined repositories (see `aptly_repositories`) will be provisioned. Put your `.deb` packages in these directories to automatically add them to the repositories you have defined. Example:
+
+```yaml
+{name: jammy, component: main, packages: /pkgs/jammy, architectures: [amd64, arm64]}
+{name: focal, component: main, packages: /pkgs/focal, architectures: [amd64]}
+```
+
+This adds all `.deb` files `/pkgs/jammy` to the `jammy-main` channel, and all `.deb` files in `/pkgs/focal` to the `focal-main` channel.
+
+### Aptly general
+
+- `aptly_gpg_private_key`: String GPG private key. ResearchCloud will turn newlines into `\n` characters, so these are replaced by true newlines in the playbook. **Note**: a key without a passphrase is expected.
+- `aptly_gpg_public_key`: String GPG public key. ResearchCloud will turn newlines into `\n` characters, so these are replaced by true newlines in the playbook.
+- `aptly_user`: String name for the aptly user (default: `aptly`).
+- `aptly_home`: String homedirectory for the aptly user (default: `/srv/aptly`).
+- `aptly_api_enable`: Boolean whether to enable the Aptly API (served on port `9091`).
+
+### GPG
+
+When not setting the GPG keys as parameters (see above), these variables can be used to configure key generation on the workspace:
+
+- `aptly_gpg_realname`: String name of the user to which the key belongs (default: 'Aptly on Research Cloud').
+- `aptly_gpg_useremail`: String email of the user to which the key belongs (default: `aptly@localhost`).
+- `aptly_gpg_algo`: String algorithm to use for key generation, e.g. `rsa4096` (default: `future-default`, which utilizes the algorithm that is planned to be used in future GPG releases).
+- `aptly_gpg_expire`: Integer days after which the key expires (default: 360).
+- `aptly_gpg_passphrase`: String passphrase with which to protect the private key (default: `None`). **Note: creating a passphrase-protected key is possible, but not yet supported, as the aptly role currently does not allow importing a key with a passphrase.**
+
+
+## Dependencies
+
+Two external roles are used and imported to this repository as git subtrees. See roles/ext/ for more info and licensing. We import them into this repo because we cannot install arbitrary external roles on SURF ResearchCloud.
 
 ## Molecule
 
