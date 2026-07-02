@@ -17,12 +17,12 @@
     - name: Parse aptly packages as yaml
       ansible.builtin.set_fact:
         packages: "{{ packages | d([]) + [item | from_yaml] }}"
-      loop: "{{ aptly_packages.split('\\n') | list }}"
+      loop: "{{ aptly_packages.split('\\n') | list | select }}"
 
     - name: Parse aptly repositories as yaml
       ansible.builtin.set_fact:
         repos: "{{ repos | d([]) + [item | from_yaml] }}"
-      loop: "{{ aptly_repositories.split('\\n') | list }}"
+      loop: "{{ aptly_repositories.split('\\n') | list | select }}"
 
     - name: Set aptly user vars
       ansible.builtin.set_fact:
